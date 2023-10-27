@@ -6,15 +6,11 @@ extern crate openssl_src;
 extern crate pkg_config;
 extern crate vcpkg;
 
-use std::collections::HashSet;
 use std::env;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 mod cfgs;
 
-mod find_normal;
-#[cfg(feature = "vendored")]
-mod find_vendored;
 mod run_bindgen;
 
 #[derive(PartialEq)]
@@ -44,41 +40,14 @@ fn env(name: &str) -> Option<OsString> {
     env_inner(&prefixed).or_else(|| env_inner(name))
 }
 
-fn find_openssl(target: &str) -> (Vec<PathBuf>, PathBuf) {
-    #[cfg(feature = "vendored")]
-    {
-        // vendor if the feature is present, unless
-        // OPENSSL_NO_VENDOR exists and isn't `0`
-        if env("OPENSSL_NO_VENDOR").map_or(true, |s| s == "0") {
-            return find_vendored::get_openssl(target);
-        }
-    }
-    find_normal::get_openssl(target)
-}
-
-fn check_ssl_kind() {
-    if cfg!(feature = "unstable_boringssl") {
-        println!("cargo:rustc-cfg=boringssl");
-        println!("cargo:boringssl=true");
-
-        if let Ok(vars) = env::var("DEP_BSSL_CONF") {
-            for var in vars.split(',') {
-                println!("cargo:rustc-cfg=osslconf=\"{}\"", var);
-            }
-            println!("cargo:conf={}", vars);
-        }
-
-        // BoringSSL does not have any build logic, exit early
-        std::process::exit(0);
-    }
-}
-
 fn main() {
-    check_ssl_kind();
+    let openssl_dir = env("OPENSSL_DIR").map(PathBuf::from);
+    if openssl_dir.is_none() {
+        panic!("OpenSSL directory not found: env. variable OPENSSL_DIR probably not set.",)
+    }
 
-    let target = env::var("TARGET").unwrap();
-
-    let (lib_dirs, include_dir) = find_openssl(&target);
+    let lib_dirs = vec![openssl_dir.clone().unwrap().join("lib64")];
+    let include_dir = openssl_dir.clone().unwrap().join("include");
 
     if !lib_dirs.iter().all(|p| Path::new(p).exists()) {
         panic!("OpenSSL library directory does not exist: {:?}", lib_dirs);
@@ -98,47 +67,13 @@ fn main() {
     }
     println!("cargo:include={}", include_dir.to_string_lossy());
 
-    let version = postprocess(&[include_dir]);
+    postprocess(&[include_dir]);
 
-    let libs_env = env("OPENSSL_LIBS");
-    let libs = match libs_env.as_ref().and_then(|s| s.to_str()) {
-        Some(v) => {
-            if v.is_empty() {
-                vec![]
-            } else {
-                v.split(':').collect()
-            }
-        }
-        None => match version {
-            Version::Openssl10x if target.contains("windows") => vec!["ssleay32", "libeay32"],
-            Version::Openssl3xx | Version::Openssl11x if target.contains("windows-msvc") => {
-                vec!["libssl", "libcrypto"]
-            }
-            _ => vec!["ssl", "crypto"],
-        },
-    };
+    let libs = vec!["ssl", "crypto"];
 
-    let kind = determine_mode(&lib_dirs, &libs);
+    let kind = "static";
     for lib in libs.into_iter() {
         println!("cargo:rustc-link-lib={}={}", kind, lib);
-    }
-
-    // https://github.com/openssl/openssl/pull/15086
-    if version == Version::Openssl3xx
-        && kind == "static"
-        && (env::var("CARGO_CFG_TARGET_OS").unwrap() == "linux"
-            || env::var("CARGO_CFG_TARGET_OS").unwrap() == "android")
-        && env::var("CARGO_CFG_TARGET_POINTER_WIDTH").unwrap() == "32"
-    {
-        println!("cargo:rustc-link-lib=dylib=atomic");
-    }
-
-    if kind == "static" && target.contains("windows") {
-        println!("cargo:rustc-link-lib=dylib=gdi32");
-        println!("cargo:rustc-link-lib=dylib=user32");
-        println!("cargo:rustc-link-lib=dylib=crypt32");
-        println!("cargo:rustc-link-lib=dylib=ws2_32");
-        println!("cargo:rustc-link-lib=dylib=advapi32");
     }
 }
 
@@ -362,57 +297,4 @@ fn parse_new_version(version: &str) -> u64 {
     let patch = it.next().unwrap().parse::<u64>().unwrap();
 
     (major << 28) | (minor << 20) | (patch << 4)
-}
-
-/// Given a libdir for OpenSSL (where artifacts are located) as well as the name
-/// of the libraries we're linking to, figure out whether we should link them
-/// statically or dynamically.
-fn determine_mode(libdirs: &[PathBuf], libs: &[&str]) -> &'static str {
-    // First see if a mode was explicitly requested
-    let kind = env("OPENSSL_STATIC");
-    match kind.as_ref().and_then(|s| s.to_str()) {
-        Some("0") => return "dylib",
-        Some(_) => return "static",
-        None => {}
-    }
-
-    // Next, see what files we actually have to link against, and see what our
-    // possibilities even are.
-    let mut files = HashSet::new();
-    for dir in libdirs {
-        for path in dir
-            .read_dir()
-            .unwrap()
-            .map(|e| e.unwrap())
-            .map(|e| e.file_name())
-            .filter_map(|e| e.into_string().ok())
-        {
-            files.insert(path);
-        }
-    }
-    let can_static = libs
-        .iter()
-        .all(|l| files.contains(&format!("lib{}.a", l)) || files.contains(&format!("{}.lib", l)));
-    let can_dylib = libs.iter().all(|l| {
-        files.contains(&format!("lib{}.so", l))
-            || files.contains(&format!("{}.dll", l))
-            || files.contains(&format!("lib{}.dylib", l))
-    });
-    match (can_static, can_dylib) {
-        (true, false) => return "static",
-        (false, true) => return "dylib",
-        (false, false) => {
-            panic!(
-                "OpenSSL libdir at `{:?}` does not contain the required files \
-                 to either statically or dynamically link OpenSSL",
-                libdirs
-            );
-        }
-        (true, true) => {}
-    }
-
-    // Ok, we've got not explicit preference and can *either* link statically or
-    // link dynamically. In the interest of "security upgrades" and/or "best
-    // practices with security libs", let's link dynamically.
-    "dylib"
 }
