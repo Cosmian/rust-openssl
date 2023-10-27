@@ -23,11 +23,13 @@ Version 2.0 and the MIT license without any additional terms or conditions.
 
 
 # Local installation for OpenSSL 3.1.0
-One may use `$ source setup.sh` for automatic OpenSSL installation. One must also be aware that environment variables are exported in this script. The user would need to re-export them or use preloading variables upon running such as `OPENSSL_CONF=.../openssl.cnf cargo run` if they no longer exist.
+You can use `setup.sh` bash script to automatically install OpenSSL version 3.1.0. You must be aware that environment variables are exported in this script such as `OPENSSL_DIR` and `OPENSSL_CONF` so you need to re-export them or use preloading variables upon running such as `OPENSSL_CONF=/PATH/TO/YOUR/OPENSSL/LOCAL/INSTALL/openssl.cnf cargo run` if they no longer exist.
+
+Please notice that exporting `OPENSSL_CONF` variable overrides your default configuration path if you have a native OpenSSL installed: all calls from your native OpenSSL will look for your newly defined `OPENSSL_CONF`, so preloading the variable might be safer until you reload a new shell.
 
 
 # Configuring OpenSSL
-One last step must be done manually. The local installation must be told which non-default FIPS module to use. To do so, you can enable FIPS usage for all applications using the non-default OpenSSL configuration file freshly installed. Edit your `$OPENSSL_DIR/ssl/openssl.cnf` file to contain the following data and change `.include /YOUR/PATH/TO/OPENSSL/LOCAL/INSTALL/ssl/fipsmodule.cnf` accordingly.
+One last step must be done manually to be able to load the FIPS module. The local installation must be told which non-default FIPS module to use. To do so, you can enable FIPS usage for all applications using the non-default OpenSSL configuration file freshly installed. Edit your `$OPENSSL_DIR/ssl/openssl.cnf` file to contain the following data and change `.include /PATH/TO/YOUR/OPENSSL/LOCAL/INSTALL/ssl/fipsmodule.cnf` accordingly.
 
 ```
 # For FIPS
@@ -36,7 +38,7 @@ One last step must be done manually. The local installation must be told which n
 # fips provider. It contains a named section e.g. [fips_sect] which is
 # referenced from the [provider_sect] below.
 # Refer to the OpenSSL security policy for more information.
-.include /YOUR/PATH/TO/OPENSSL/LOCAL/INSTALL/ssl/fipsmodule.cnf
+.include /PATH/TO/YOUR/OPENSSL/LOCAL/INSTALL/ssl/fipsmodule.cnf
 
 [ openssl_init ]
 providers = provider_sect
