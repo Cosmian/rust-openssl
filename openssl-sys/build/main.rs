@@ -80,7 +80,7 @@ fn postprocess(include_dirs: &[PathBuf]) -> Version {
     // Never run bindgen for BoringSSL, if it was needed we already ran it.
     if version != Version::Boringssl {
         #[cfg(feature = "bindgen")]
-        run_bindgen::run(&include_dirs);
+        run_bindgen::run(include_dirs);
     }
 
     version
@@ -140,7 +140,6 @@ See rust-openssl documentation for more information:
 
     let mut enabled = vec![];
     let mut openssl_version = None;
-    let libressl_version = None;
     for line in expanded.lines() {
         let line = line.trim();
 
@@ -164,7 +163,7 @@ See rust-openssl documentation for more information:
     // We set this for any non-BoringSSL lib.
     println!("cargo:rustc-cfg=openssl");
 
-    for cfg in cfgs::get(openssl_version, libressl_version) {
+    for cfg in cfgs::get(openssl_version) {
         println!("cargo:rustc-cfg={}", cfg);
     }
 
