@@ -20,7 +20,6 @@ cd -
 
 # Creating ssl config files directory.
 mkdir "${OPENSSL_DIR}/ssl"
-export OPENSSL_CONF="${OPENSSL_DIR}"/ssl/openssl.cnf
 
 path_save="$(pwd)"
 

@@ -23,9 +23,9 @@ Version 2.0 and the MIT license without any additional terms or conditions.
 
 
 # Local installation for OpenSSL 3.1.0
-You can use `setup.sh` bash script to automatically install OpenSSL version 3.1.0. You must be aware that environment variables are exported in this script such as `OPENSSL_DIR` and `OPENSSL_CONF` so you need to re-export them or use preloading variables upon running such as `OPENSSL_CONF=/PATH/TO/YOUR/OPENSSL/LOCAL/INSTALL/openssl.cnf cargo run` if they no longer exist.
+You can use `setup.sh` bash script to automatically install OpenSSL version 3.1.0. You must be aware that the environment variable `OPENSSL_DIR` is exported in this script, so you need to re-export it or use preloading variables upon running such as `OPENSSL_DIR=/PATH/TO/YOUR/OPENSSL/LOCAL/INSTALL/ cargo run` if it no longer exists.
 
-Please notice that exporting `OPENSSL_CONF` variable overrides your default configuration path if you have a native OpenSSL installed: all calls from your native OpenSSL will look for your newly defined `OPENSSL_CONF`, so preloading the variable might be safer until you reload a new shell.
+Please notice that exporting `OPENSSL_CONF` variable overrides your default configuration path if you have a native OpenSSL installed: all calls from your native OpenSSL will look for your newly defined `OPENSSL_CONF`.
 
 
 # Configuring OpenSSL
