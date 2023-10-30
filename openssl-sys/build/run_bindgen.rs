@@ -1,12 +1,9 @@
 #[cfg(feature = "bindgen")]
 use bindgen::callbacks::{MacroParsingBehavior, ParseCallbacks};
 #[cfg(feature = "bindgen")]
-use bindgen::{MacroTypeVariation, RustTarget};
-use std::io::Write;
+use bindgen::RustTarget;
+use std::env;
 use std::path::PathBuf;
-#[cfg(not(feature = "bindgen"))]
-use std::process;
-use std::{env, fs};
 
 const INCLUDES: &str = "
 #include <openssl/aes.h>
@@ -106,111 +103,6 @@ pub fn run(include_dirs: &[PathBuf]) {
         .unwrap()
         .write_to_file(out_dir.join("bindgen.rs"))
         .unwrap();
-}
-
-#[cfg(feature = "bindgen")]
-pub fn run_boringssl(include_dirs: &[PathBuf]) {
-    let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
-    let mut builder = bindgen::builder()
-        .rust_target(RustTarget::Stable_1_47)
-        .ctypes_prefix("::libc")
-        .raw_line("use libc::*;")
-        .derive_default(false)
-        .enable_function_attribute_detection()
-        .default_macro_constant_type(MacroTypeVariation::Signed)
-        .rustified_enum("point_conversion_form_t")
-        .allowlist_file(".*/openssl/[^/]+\\.h")
-        .allowlist_recursively(false)
-        .blocklist_function("BIO_vsnprintf")
-        .blocklist_function("OPENSSL_vasprintf")
-        .wrap_static_fns(true)
-        .wrap_static_fns_path(out_dir.join("boring_static_wrapper").display().to_string())
-        .layout_tests(false)
-        .header_contents("includes.h", INCLUDES);
-
-    for include_dir in include_dirs {
-        builder = builder
-            .clang_arg("-I")
-            .clang_arg(include_dir.display().to_string());
-    }
-
-    builder
-        .generate()
-        .unwrap()
-        .write_to_file(out_dir.join("bindgen.rs"))
-        .unwrap();
-
-    fs::File::create(out_dir.join("boring_static_wrapper.h"))
-        .expect("Failed to create boring_static_wrapper.h")
-        .write_all(INCLUDES.as_bytes())
-        .expect("Failed to write contents to boring_static_wrapper.h");
-
-    cc::Build::new()
-        .file(out_dir.join("boring_static_wrapper.c"))
-        .includes(include_dirs)
-        .flag("-include")
-        .flag(
-            &out_dir
-                .join("boring_static_wrapper.h")
-                .display()
-                .to_string(),
-        )
-        .compile("boring_static_wrapper");
-}
-
-#[cfg(not(feature = "bindgen"))]
-pub fn run_boringssl(include_dirs: &[PathBuf]) {
-    let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
-
-    fs::File::create(out_dir.join("boring_static_wrapper.h"))
-        .expect("Failed to create boring_static_wrapper.h")
-        .write_all(INCLUDES.as_bytes())
-        .expect("Failed to write contents to boring_static_wrapper.h");
-
-    let mut bindgen_cmd = process::Command::new("bindgen");
-    bindgen_cmd
-        .arg("-o")
-        .arg(out_dir.join("bindgen.rs"))
-        // Must be a valid version from
-        // https://docs.rs/bindgen/latest/bindgen/enum.RustTarget.html
-        .arg("--rust-target=1.47")
-        .arg("--ctypes-prefix=::libc")
-        .arg("--raw-line=use libc::*;")
-        .arg("--no-derive-default")
-        .arg("--enable-function-attribute-detection")
-        .arg("--default-macro-constant-type=signed")
-        .arg("--rustified-enum=point_conversion_form_t")
-        .arg("--allowlist-file=.*/openssl/[^/]+\\.h")
-        .arg("--no-recursive-allowlist")
-        .arg("--blocklist-function=BIO_vsnprintf")
-        .arg("--blocklist-function=OPENSSL_vasprintf")
-        .arg("--experimental")
-        .arg("--wrap-static-fns")
-        .arg("--wrap-static-fns-path")
-        .arg(out_dir.join("boring_static_wrapper").display().to_string())
-        .arg("--no-layout-tests")
-        .arg(out_dir.join("boring_static_wrapper.h"))
-        .arg("--")
-        .arg(format!("--target={}", env::var("TARGET").unwrap()));
-
-    for include_dir in include_dirs {
-        bindgen_cmd.arg("-I").arg(include_dir.display().to_string());
-    }
-
-    let result = bindgen_cmd.status().expect("bindgen failed to execute");
-    assert!(result.success());
-
-    cc::Build::new()
-        .file(out_dir.join("boring_static_wrapper.c"))
-        .includes(include_dirs)
-        .flag("-include")
-        .flag(
-            &out_dir
-                .join("boring_static_wrapper.h")
-                .display()
-                .to_string(),
-        )
-        .compile("boring_static_wrapper");
 }
 
 #[derive(Debug)]
